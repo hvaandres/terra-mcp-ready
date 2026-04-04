@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "terra-mcp-ready/modules/resource_group",
+  "title": "Resource Group Module",
+  "description": "Provisions one or more Azure Resource Groups. The input is a map where each key is the resource group name and each value is a configuration object.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/resource_group_config"
+  },
+  "$defs": {
+    "resource_group_config": {
+      "type": "object",
+      "description": "Configuration for a single Azure Resource Group.",
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Azure region where the resource group will be created (e.g. 'eastus2', 'westus2')."
+        },
+        "tags": {
+          "type": "object",
+          "description": "Key-value tags to apply to the resource group.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "lock": {
+          "type": "boolean",
+          "description": "When true, applies a CanNotDelete management lock to prevent accidental deletion.",
+          "default": false
+        },
+        "managed_by": {
+          "type": "string",
+          "description": "Resource ID of the resource managing this resource group. Leave empty if not applicable.",
+          "default": ""
+        }
+      },
+      "required": ["location"],
+      "additionalProperties": false
+    }
+  },
+  "_meta": {
+    "module_source": "git::https://github.com/<org>/terra-mcp-ready.git//modules/resource_group",
+    "variable_name": "resource_groups",
+    "output_keys": ["resource_groups", "ids", "names"],
+    "terraform_version": ">= 1.5, < 2.0",
+    "provider": "azurerm ~> 4.0"
+  }
+}
