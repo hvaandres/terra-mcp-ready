@@ -1,0 +1,40 @@
+#!/bin/bash
+###############################################################################
+# Managed by Terraform — do not edit in place.
+#
+# Creates the admin user, sets its password, and enables SSH password auth.
+# Runs once at first boot via GCE metadata_startup_script.
+###############################################################################
+set -euo pipefail
+
+USER_NAME='${user}'
+USER_PASSWORD='${password}'
+
+# Create the user if it doesn't exist, with bash as default shell.
+if ! id -u "$USER_NAME" >/dev/null 2>&1; then
+  useradd --create-home --shell /bin/bash "$USER_NAME"
+fi
+
+# Set the password non-interactively.
+echo "$USER_NAME:$USER_PASSWORD" | chpasswd
+
+# Give the user sudo without password prompting.
+echo "$USER_NAME ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-$USER_NAME"
+chmod 0440 "/etc/sudoers.d/90-$USER_NAME"
+
+# Enable SSH password authentication (Ubuntu disables it by default).
+SSHD_CONFIG="/etc/ssh/sshd_config"
+if grep -qE '^\s*PasswordAuthentication\s' "$SSHD_CONFIG"; then
+  sed -ri 's|^\s*PasswordAuthentication\s+.*|PasswordAuthentication yes|' "$SSHD_CONFIG"
+else
+  echo "PasswordAuthentication yes" >> "$SSHD_CONFIG"
+fi
+
+# On Ubuntu 24.04+ this override file can ship with "PasswordAuthentication no"
+# and takes precedence; strip it if present.
+CLOUD_OVERRIDE="/etc/ssh/sshd_config.d/50-cloud-init.conf"
+if [ -f "$CLOUD_OVERRIDE" ]; then
+  sed -ri 's|^\s*PasswordAuthentication\s+.*|PasswordAuthentication yes|' "$CLOUD_OVERRIDE"
+fi
+
+systemctl restart ssh || systemctl restart sshd || true

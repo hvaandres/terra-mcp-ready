@@ -18,6 +18,10 @@ The current catalog:
 |---|---|---|
 | `modules/project` | `projects` | GCP Project Module |
 | `modules/storage_bucket` | `storage_buckets` | GCS Storage Bucket Module |
+| `modules/vpc_network` | `vpc_networks` | GCP VPC Network Module |
+| `modules/compute_instance` | `compute_instances` | GCP Compute Instance Module |
+
+In addition, `examples/composition/` is a root module that consumes ALL modules together and accepts a single tfvars with keys `projects`, `vpc_networks`, `compute_instances`, `storage_buckets`. It auto-rewrites `compute_instances[*].network` and `.subnetwork` to the `self_link` of a same-apply VPC/subnet when the value matches — agents can therefore generate a combined tfvars whose VMs reference newly-created VPCs by name without resorting to remote-state lookups.
 ## 3. Schema contract
 Every `schema.json` is a JSON Schema draft-07 document with this shape:
 ```
@@ -96,6 +100,11 @@ To save and later apply an exact plan:
 ```bash
 terraform -chdir=examples/<name> plan  -var-file=file.tfvars.json -out=tfplan
 terraform -chdir=examples/<name> apply tfplan        # positional; no -var-file
+```
+To apply MULTIPLE modules in one pass (e.g. VPC + VM + bucket together), target `examples/composition/` and pass a tfvars whose top-level keys combine every module's `variable_name`:
+```bash
+terraform -chdir=examples/composition plan  -var-file=/abs/path/all.tfvars.json -out=tfplan
+terraform -chdir=examples/composition apply tfplan
 ```
 ## 7. GCP label rules (summary)
 Both label keys and values share the charset `[a-z0-9_-]`. Differences:

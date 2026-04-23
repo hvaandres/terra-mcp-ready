@@ -51,7 +51,12 @@ echo ""
 
 bold "── Step 2: terraform init ─────────────────────────────────"
 
-for example_dir in "$REPO_ROOT/examples/projects" "$REPO_ROOT/examples/storage_buckets"; do
+for example_dir in \
+  "$REPO_ROOT/examples/projects" \
+  "$REPO_ROOT/examples/storage_buckets" \
+  "$REPO_ROOT/examples/vpc_networks" \
+  "$REPO_ROOT/examples/compute_instances" \
+  "$REPO_ROOT/examples/composition"; do
   label="terraform init ($(basename "$(dirname "$example_dir")")/$(basename "$example_dir"))"
   rm -rf "$example_dir/.terraform" "$example_dir/.terraform.lock.hcl"
   if terraform -chdir="$example_dir" init -backend=false > /dev/null 2>&1; then
@@ -68,7 +73,12 @@ echo ""
 
 bold "── Step 3: terraform validate ─────────────────────────────"
 
-for example_dir in "$REPO_ROOT/examples/projects" "$REPO_ROOT/examples/storage_buckets"; do
+for example_dir in \
+  "$REPO_ROOT/examples/projects" \
+  "$REPO_ROOT/examples/storage_buckets" \
+  "$REPO_ROOT/examples/vpc_networks" \
+  "$REPO_ROOT/examples/compute_instances" \
+  "$REPO_ROOT/examples/composition"; do
   label="terraform validate ($(basename "$(dirname "$example_dir")")/$(basename "$example_dir"))"
   if terraform -chdir="$example_dir" validate > /dev/null 2>&1; then
     pass "$label"
@@ -87,10 +97,17 @@ bold "── Step 4: terraform fmt ───────────────
 for dir in \
   "$REPO_ROOT/modules/project" \
   "$REPO_ROOT/modules/storage_bucket" \
+  "$REPO_ROOT/modules/vpc_network" \
+  "$REPO_ROOT/modules/compute_instance" \
   "$REPO_ROOT/examples/projects" \
   "$REPO_ROOT/examples/storage_buckets" \
+  "$REPO_ROOT/examples/vpc_networks" \
+  "$REPO_ROOT/examples/compute_instances" \
+  "$REPO_ROOT/examples/composition" \
   "$REPO_ROOT/tests/project" \
-  "$REPO_ROOT/tests/storage_bucket"; do
+  "$REPO_ROOT/tests/storage_bucket" \
+  "$REPO_ROOT/tests/vpc_network" \
+  "$REPO_ROOT/tests/compute_instance"; do
   label="fmt $(basename "$(dirname "$dir")")/$(basename "$dir")"
   if terraform fmt -check "$dir" > /dev/null 2>&1; then
     pass "$label"

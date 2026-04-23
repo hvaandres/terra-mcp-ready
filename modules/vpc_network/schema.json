@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "terra-mcp-ready/modules/vpc_network",
+  "title": "GCP VPC Network Module",
+  "description": "Provisions one or more GCP VPC networks with optional subnets and an opt-in allow-SSH firewall rule. Map key is the VPC name.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/vpc_network_config"
+  },
+  "$defs": {
+    "vpc_network_config": {
+      "type": "object",
+      "description": "Configuration for a single VPC network.",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the VPC.",
+          "default": "Managed by Terraform"
+        },
+        "project": {
+          "type": "string",
+          "description": "Project to create the VPC in. Leave empty to use the provider's default project.",
+          "default": ""
+        },
+        "routing_mode": {
+          "type": "string",
+          "description": "Whether dynamic routes learned via Cloud Router propagate regionally or globally.",
+          "enum": ["REGIONAL", "GLOBAL"],
+          "default": "REGIONAL"
+        },
+        "mtu": {
+          "type": "number",
+          "description": "Maximum Transmission Unit for the network (1300-8896).",
+          "default": 1460,
+          "minimum": 1300,
+          "maximum": 8896
+        },
+        "auto_create_subnetworks": {
+          "type": "boolean",
+          "description": "When true, GCP creates a subnet in every region automatically. Keep false to use custom-mode VPCs.",
+          "default": false
+        },
+        "delete_default_routes_on_create": {
+          "type": "boolean",
+          "description": "When true, delete the default 0.0.0.0/0 routes on VPC creation.",
+          "default": false
+        },
+        "subnets": {
+          "type": "array",
+          "description": "List of subnetworks to create inside this VPC.",
+          "items": { "$ref": "#/$defs/subnet_config" },
+          "default": []
+        },
+        "allow_ssh": {
+          "type": "boolean",
+          "description": "When true, create a firewall rule allowing tcp:22 from ssh_source_ranges to instances tagged 'ssh'.",
+          "default": false
+        },
+        "ssh_source_ranges": {
+          "type": "array",
+          "description": "Source CIDR ranges allowed to SSH. Only used when allow_ssh=true. Defaults to ['0.0.0.0/0']; restrict in production.",
+          "items": { "type": "string" },
+          "default": ["0.0.0.0/0"]
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "subnet_config": {
+      "type": "object",
+      "description": "A single subnetwork inside a VPC.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Subnet name (1-63 chars, lowercase, hyphens OK)."
+        },
+        "region": {
+          "type": "string",
+          "description": "GCP region for the subnet (e.g. us-central1)."
+        },
+        "ip_cidr_range": {
+          "type": "string",
+          "description": "Primary CIDR range for the subnet (e.g. 10.10.0.0/20)."
+        },
+        "private_ip_google_access": {
+          "type": "boolean",
+          "description": "Allow VMs without external IPs to reach Google APIs over the internal network.",
+          "default": true
+        }
+      },
+      "required": ["name", "region", "ip_cidr_range"],
+      "additionalProperties": false
+    }
+  },
+  "_meta": {
+    "module_source": "git::https://github.com/<org>/terra-mcp-ready.git//modules/vpc_network",
+    "variable_name": "vpc_networks",
+    "output_keys": ["vpc_networks", "subnets", "ids"],
+    "terraform_version": ">= 1.5, < 2.0",
+    "provider": "google ~> 6.0",
+    "reserved_keys": [
+      "description",
+      "project",
+      "routing_mode",
+      "mtu",
+      "auto_create_subnetworks",
+      "delete_default_routes_on_create",
+      "subnets",
+      "allow_ssh",
+      "ssh_source_ranges"
+    ],
+    "key_spec": {
+      "label": "VPC name",
+      "regex": "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$",
+      "description": "VPC name: 1-63 chars. Must start with a lowercase letter; allowed chars are lowercase letters, digits, hyphens; must end with a letter or digit.",
+      "examples": ["app-net", "shared-hub-prod"]
+    }
+  }
+}

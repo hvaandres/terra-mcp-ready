@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "terra-mcp-ready/modules/compute_instance",
+  "title": "GCP Compute Instance Module",
+  "description": "Provisions one or more Ubuntu GCE instances. Each instance gets a Terraform-generated random admin password and a startup script that creates the user and enables SSH password auth. Map key is the instance name.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/compute_instance_config"
+  },
+  "$defs": {
+    "compute_instance_config": {
+      "type": "object",
+      "description": "Configuration for a single GCE instance.",
+      "properties": {
+        "machine_type": {
+          "type": "string",
+          "description": "GCE machine type (e.g. e2-small, e2-medium, n2-standard-2).",
+          "default": "e2-small"
+        },
+        "zone": {
+          "type": "string",
+          "description": "GCE zone (e.g. us-central1-a). Leave empty to use the provider default zone.",
+          "default": ""
+        },
+        "image": {
+          "type": "string",
+          "description": "Source image for the boot disk. Defaults to the latest Ubuntu 24.04 LTS from ubuntu-os-cloud.",
+          "default": "ubuntu-os-cloud/ubuntu-2404-lts-amd64"
+        },
+        "network": {
+          "type": "string",
+          "description": "VPC network name or self_link. Defaults to 'default'.",
+          "default": "default"
+        },
+        "subnetwork": {
+          "type": "string",
+          "description": "Subnet name or self_link. Leave empty to use the VPC's auto subnet for the zone's region.",
+          "default": ""
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID to create the instance in. Leave empty to use the provider default.",
+          "default": ""
+        },
+        "user": {
+          "type": "string",
+          "description": "Admin user that will be created on the VM.",
+          "default": "tfadmin"
+        },
+        "password_length": {
+          "type": "number",
+          "description": "Length of the generated random password (8-64).",
+          "default": 24,
+          "minimum": 8,
+          "maximum": 64
+        },
+        "disk_size_gb": {
+          "type": "number",
+          "description": "Boot disk size in GB (10-65536).",
+          "default": 20,
+          "minimum": 10,
+          "maximum": 65536
+        },
+        "disk_type": {
+          "type": "string",
+          "description": "Boot disk type.",
+          "enum": ["pd-standard", "pd-balanced", "pd-ssd", "pd-extreme"],
+          "default": "pd-balanced"
+        },
+        "tags": {
+          "type": "array",
+          "description": "GCE network tags. Defaults to ['ssh'] so the VPC-level allow_ssh firewall rule applies.",
+          "items": { "type": "string" },
+          "default": ["ssh"]
+        },
+        "labels": {
+          "type": "object",
+          "description": "Resource labels. Alternatively, any non-reserved flat key becomes a label automatically.",
+          "additionalProperties": { "type": "string" },
+          "default": {}
+        },
+        "allow_stopping_for_update": {
+          "type": "boolean",
+          "description": "Allow Terraform to stop the instance to apply changes that require a restart.",
+          "default": true
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "_meta": {
+    "module_source": "git::https://github.com/<org>/terra-mcp-ready.git//modules/compute_instance",
+    "variable_name": "compute_instances",
+    "output_keys": ["instances", "ssh_users", "passwords", "ssh_commands"],
+    "terraform_version": ">= 1.5, < 2.0",
+    "provider": "google ~> 6.0; random ~> 3.6",
+    "reserved_keys": [
+      "machine_type",
+      "zone",
+      "image",
+      "network",
+      "subnetwork",
+      "project",
+      "user",
+      "password_length",
+      "disk_size_gb",
+      "disk_type",
+      "tags",
+      "labels",
+      "allow_stopping_for_update"
+    ],
+    "key_spec": {
+      "label": "instance name",
+      "regex": "^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$",
+      "description": "GCE instance name: 1-63 chars. Must start with a lowercase letter; allowed chars are lowercase letters, digits, hyphens; must end with a letter or digit. Unique within project+zone.",
+      "examples": ["app-dev-01", "web-prod-01"]
+    },
+    "sensitive_outputs": ["passwords"]
+  }
+}

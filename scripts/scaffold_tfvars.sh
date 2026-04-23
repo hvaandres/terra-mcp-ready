@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 ###############################################################################
-# scaffold_tfvars.sh — Interactive tfvars builder
+# scaffold_tfvars.sh — Interactive tfvars builder (multi-module)
 #
 # Optional helper. If you don't run this, terraform plan/apply continues to use
 # the tfvars file already checked into examples/<module>/.
 #
 # What it does:
-#   1. Asks which module you want (reads modules/*/schema.json for the list).
-#   2. Reads that module's schema to know the fields and defaults.
-#   3. Prompts for one or more resource blocks, field-by-field.
+#   1. Lets you pick a module (reads modules/*/schema.json for the list).
+#   2. Prompts for one or more resources of that module.
+#   3. When you're done with that module, offers to SWITCH to another module
+#      so a single run can provision VPCs + VMs + buckets + projects together.
 #   4. Any field you leave blank is omitted so the module default applies.
 #   5. Collects free-form labels (flat-keys convention — no "labels: {}" wrapping).
-#   6. Assembles a valid .tfvars.json, validates the JSON, and writes it.
-#   7. Prints the exact `terraform plan -var-file=...` command to run next.
+#   6. Writes one `generated.tfvars.json` per module into its matching
+#      examples/<module>/ dir (so `-var-file` + `-chdir` line up).
+#   7. When you used more than one module in a run, also writes a combined
+#      reference file at the repo root (or at the path passed via -o).
+#   8. Runs `terraform validate` against each module's example dir and prints
+#      the exact plan/apply commands to run next.
 #
 # Usage:
 #   ./scripts/scaffold_tfvars.sh                         # fully interactive
-#   ./scripts/scaffold_tfvars.sh --module storage_bucket # skip module prompt
-#   ./scripts/scaffold_tfvars.sh -m project -o /tmp/p.tfvars.json
+#   ./scripts/scaffold_tfvars.sh --module storage_bucket # skip FIRST module prompt
+#   ./scripts/scaffold_tfvars.sh -o /tmp/all.tfvars.json # aggregate file path
 ###############################################################################
 
 set -uo pipefail
@@ -70,12 +75,16 @@ die() { red "$*"; exit 1; }
 command -v jq >/dev/null 2>&1 || die "jq is required. Install it first."
 
 # ---------------------------------------------------------------------------
-# Step 1: Pick a module
+# Banner + discover modules
 # ---------------------------------------------------------------------------
 
 bold "═══════════════════════════════════════════════════════════════"
-bold " terra-mcp-ready — Interactive tfvars builder"
+bold " terra-mcp-ready — Interactive tfvars builder (multi-module)"
 bold "═══════════════════════════════════════════════════════════════"
+echo ""
+dim " Add resources from one OR MULTIPLE modules in a single run."
+dim " One generated.tfvars.json is dropped into each examples/<module>/ dir,"
+dim " ready for terraform -chdir=<dir> plan/apply."
 echo ""
 
 # Discover modules from schema.json presence
@@ -87,7 +96,22 @@ done
 
 [ "${#modules[@]}" -gt 0 ] || die "No modules with schema.json found under $REPO_ROOT/modules."
 
-if [ -z "$MODULE" ]; then
+# Consolidated output: one top-level key per module variable_name.
+CONSOLIDATED='{}'
+first_iter=1
+finish_run=0
+
+# ---------------------------------------------------------------------------
+# Outer loop: keep adding modules until the user is done.
+# ---------------------------------------------------------------------------
+
+while true; do
+
+# ---------------------------------------------------------------------------
+# Step 1: Pick a module (CLI --module honored on FIRST iteration only)
+# ---------------------------------------------------------------------------
+
+if [ "$first_iter" -eq 0 ] || [ -z "$MODULE" ]; then
   cyan "Available modules:"
   for i in "${!modules[@]}"; do
     printf "  %d) %s\n" "$((i + 1))" "${modules[$i]}"
@@ -99,6 +123,7 @@ if [ -z "$MODULE" ]; then
   fi
   MODULE="${modules[$idx]}"
 fi
+first_iter=0
 
 SCHEMA="$REPO_ROOT/modules/$MODULE/schema.json"
 [ -f "$SCHEMA" ] || die "schema.json not found at $SCHEMA"
@@ -318,100 +343,184 @@ while true; do
   # Merge into entries
   entries=$(echo "$entries" | jq --arg k "$RES_KEY" --argjson v "$entry" '. + {($k): $v}')
 
-  echo ""
-  prompt "Add another resource? (y/N)" "N"
-  case "$REPLY" in
-    y|Y|yes|YES) ;;
-    *) break ;;
+  # --------------------------------------------------------------------------
+  # Single 3-way "what next?" menu. Replaces the old two-step prompt so the
+  # user never has to answer "N" before reaching the module switcher.
+  # --------------------------------------------------------------------------
+  next_action=""
+  while true; do
+    echo ""
+    bold "  What next?"
+    echo "    1) Add ANOTHER resource to the SAME module ($MODULE)"
+    echo "    2) Switch to a DIFFERENT module (will show the module picker again)"
+    echo "    3) Finish — review and write tfvars"
+    prompt "  Choice [1/2/3]" "1"
+    case "$REPLY" in
+      1|same|s)     next_action="same";   break ;;
+      2|switch|d)   next_action="switch"; break ;;
+      3|done|finish|f) next_action="done"; break ;;
+      *) red "  Invalid choice. Enter 1, 2, or 3." ;;
+    esac
+  done
+
+  # "same" → keep looping the inner resource loop for this module.
+  # "switch" or "done" → exit the inner loop; the outer loop will decide
+  # whether to re-pick a module or fall through to the write phase.
+  case "$next_action" in
+    same)   continue ;;
+    switch) break    ;;
+    done)   finish_run=1; break ;;
   esac
 done
 
-# ---------------------------------------------------------------------------
-# Step 4: Assemble and validate
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Merge this module's entries into the consolidated output. The tri-option
+# menu above already told us whether to switch modules or finish; no second
+# prompt needed here.
+# -----------------------------------------------------------------------------
 
-FINAL_JSON=$(echo "$entries" | jq --arg var "$VAR_NAME" '{($var): .}')
+CONSOLIDATED=$(echo "$CONSOLIDATED" | jq --arg v "$VAR_NAME" --argjson e "$entries" '
+  .[$v] = (.[$v] // {}) + $e
+')
+
+module_count=$(echo "$CONSOLIDATED" | jq --arg v "$VAR_NAME" '.[$v] | length')
+echo ""
+green "✓ $VAR_NAME now has $module_count entr$([ "$module_count" = "1" ] && echo y || echo ies) in the consolidated output"
+
+if [ "$finish_run" -eq 1 ]; then
+  break
+fi
+
+# Force the module picker to show again on the next iteration.
+MODULE=""
+
+done  # outer module loop
+
+# ---------------------------------------------------------------------------
+# Step 4: Review & write (one tfvars file per module; aggregate at repo root)
+# ---------------------------------------------------------------------------
 
 echo ""
-bold "── Review ────────────────────────────────────────────────────"
-echo "$FINAL_JSON" | jq .
+bold "── Review (combined) ─────────────────────────────────────────"
+echo "$CONSOLIDATED" | jq .
 echo ""
 
-# Validate JSON
-if ! echo "$FINAL_JSON" | jq empty >/dev/null 2>&1; then
+if ! echo "$CONSOLIDATED" | jq empty >/dev/null 2>&1; then
   die "Generated JSON is not well-formed (bug)."
 fi
 green "✓ JSON is well-formed"
 
-# Default output location based on module
-case "$VAR_NAME" in
-  projects)        DEFAULT_DIR="$REPO_ROOT/examples/projects" ;;
-  storage_buckets) DEFAULT_DIR="$REPO_ROOT/examples/storage_buckets" ;;
-  *)               DEFAULT_DIR="$REPO_ROOT" ;;
-esac
+# List of variable_names that got entries.
+SELECTED_VARS=()
+while IFS= read -r _vn; do
+  [ -n "$_vn" ] && SELECTED_VARS+=("$_vn")
+done < <(echo "$CONSOLIDATED" | jq -r 'keys[]')
 
-if [ -z "$OUTPUT" ]; then
-  prompt "Output path" "$DEFAULT_DIR/generated.tfvars.json"
-  OUTPUT="$REPLY"
+if [ "${#SELECTED_VARS[@]}" -eq 0 ]; then
+  yellow "No resources were added. Nothing to write."
+  exit 0
 fi
 
-if [ -e "$OUTPUT" ]; then
-  prompt "$OUTPUT exists — overwrite? (y/N)" "N"
-  case "$REPLY" in
-    y|Y|yes|YES) ;;
-    *) die "Aborted; existing file preserved." ;;
-  esac
-fi
+echo ""
+bold "── Writing per-module tfvars files ───────────────────────────"
 
-echo "$FINAL_JSON" > "$OUTPUT"
-green "✓ Wrote $OUTPUT"
+for vn in "${SELECTED_VARS[@]}"; do
+  slice=$(echo "$CONSOLIDATED" | jq --arg vn "$vn" '{($vn): .[$vn]}')
+  target_dir="$REPO_ROOT/examples/$vn"
+
+  if [ ! -d "$target_dir" ]; then
+    yellow "  No examples/$vn/ dir — skipping tfvars write for $vn."
+    continue
+  fi
+
+  target="$target_dir/generated.tfvars.json"
+  if [ -e "$target" ]; then
+    prompt "  $target exists — overwrite? (y/N)" "N"
+    case "$REPLY" in
+      y|Y|yes|YES) ;;
+      *) yellow "  Skipped $target"; continue ;;
+    esac
+  fi
+  echo "$slice" > "$target"
+  green "  ✓ Wrote $target"
+done
+
+# Aggregate reference file — only when the user selected >1 module OR when
+# -o was explicitly provided on the CLI.
+if [ "${#SELECTED_VARS[@]}" -gt 1 ] || [ -n "$OUTPUT" ]; then
+  aggregate="${OUTPUT:-$REPO_ROOT/generated.tfvars.json}"
+  write_it=1
+  if [ -e "$aggregate" ]; then
+    prompt "  $aggregate exists — overwrite? (y/N)" "N"
+    case "$REPLY" in
+      y|Y|yes|YES) ;;
+      *) yellow "  Skipped $aggregate"; write_it=0 ;;
+    esac
+  fi
+  if [ "$write_it" -eq 1 ]; then
+    echo "$CONSOLIDATED" > "$aggregate"
+    green "  ✓ Wrote $aggregate (combined reference — not used by terraform directly)"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
-# Step 5: Module-level validation (terraform validate against example dir)
+# Step 5: terraform validate per selected module
 # ---------------------------------------------------------------------------
 
 echo ""
-bold "── Validating module ─────────────────────────────────────────"
+bold "── Validating modules ────────────────────────────────────────"
 
-VALIDATE_DIR=""
-case "$VAR_NAME" in
-  projects)        VALIDATE_DIR="$REPO_ROOT/examples/projects" ;;
-  storage_buckets) VALIDATE_DIR="$REPO_ROOT/examples/storage_buckets" ;;
-esac
+validate_failed=0
+for vn in "${SELECTED_VARS[@]}"; do
+  target_dir="$REPO_ROOT/examples/$vn"
+  [ -d "$target_dir" ] || continue
 
-if [ -n "$VALIDATE_DIR" ] && [ -d "$VALIDATE_DIR" ]; then
-  if [ ! -d "$VALIDATE_DIR/.terraform" ]; then
-    echo "  Initializing $VALIDATE_DIR (one-time)..."
-    terraform -chdir="$VALIDATE_DIR" init -backend=false >/dev/null 2>&1 || \
+  if [ ! -d "$target_dir/.terraform" ]; then
+    echo "  Initializing examples/$vn (one-time)..."
+    terraform -chdir="$target_dir" init -backend=false >/dev/null 2>&1 || \
       yellow "  terraform init had warnings; continuing."
   fi
 
-  if terraform -chdir="$VALIDATE_DIR" validate >/dev/null 2>&1; then
-    green "✓ terraform validate passed on $(basename "$VALIDATE_DIR")"
+  if terraform -chdir="$target_dir" validate >/dev/null 2>&1; then
+    green "  ✓ terraform validate passed on examples/$vn"
   else
-    red "✗ terraform validate FAILED on $(basename "$VALIDATE_DIR")"
-    terraform -chdir="$VALIDATE_DIR" validate
-    exit 1
+    red "  ✗ terraform validate FAILED on examples/$vn"
+    terraform -chdir="$target_dir" validate
+    validate_failed=1
   fi
-else
-  yellow "  No matching example dir for var '$VAR_NAME'; skipped terraform validate."
-fi
+done
+
+[ "$validate_failed" -eq 1 ] && exit 1
 
 # ---------------------------------------------------------------------------
-# Step 6: Next steps
+# Step 6: Next steps (per module)
 # ---------------------------------------------------------------------------
 
 echo ""
 bold "── Next ──────────────────────────────────────────────────────"
 echo ""
-if [ -n "$VALIDATE_DIR" ]; then
-  cyan "  terraform -chdir=$VALIDATE_DIR plan -var-file=$OUTPUT"
-  cyan "  terraform -chdir=$VALIDATE_DIR apply -var-file=$OUTPUT"
-  echo ""
-  if [ "$VAR_NAME" = "storage_buckets" ]; then
-    dim "  Tip: export GOOGLE_PROJECT=<your-project-id> so buckets pick up the"
-    dim "       default project from the provider without per-bucket 'project'."
-  fi
-fi
+dim "Source your GCP env vars first if you haven't:"
+dim "  set -a; . $REPO_ROOT/beginning_journey/.env; set +a"
 echo ""
+
+for vn in "${SELECTED_VARS[@]}"; do
+  target_dir="$REPO_ROOT/examples/$vn"
+  tf="$target_dir/generated.tfvars.json"
+  [ -f "$tf" ] || continue
+  cyan "  # $vn"
+  cyan "  terraform -chdir=$target_dir plan  -var-file=$tf -out=tfplan"
+  cyan "  terraform -chdir=$target_dir apply tfplan"
+  echo ""
+done
+
+if printf '%s\n' "${SELECTED_VARS[@]}" | grep -qx storage_buckets; then
+  dim "Tip: export GOOGLE_PROJECT=<your-project-id> so buckets pick up the"
+  dim "     default project from the provider without per-bucket 'project'."
+fi
+
+if printf '%s\n' "${SELECTED_VARS[@]}" | grep -qx compute_instances; then
+  dim "Tip: after apply, retrieve instance passwords with:"
+  dim "     terraform -chdir=$REPO_ROOT/examples/compute_instances output -json passwords | jq ."
+fi
+
 green "Done."

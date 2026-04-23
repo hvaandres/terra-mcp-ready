@@ -62,6 +62,22 @@ Every module ships a `schema.json` ([JSON Schema draft-07](https://json-schema.o
 |--------|-------------|--------|
 | [`project`](modules/project/) | GCP Projects with optional deletion liens | ✅ Available |
 | [`storage_bucket`](modules/storage_bucket/) | GCS Buckets with versioning, retention, and lifecycle rules | ✅ Available |
+| [`vpc_network`](modules/vpc_network/) | VPC networks + nested subnets + opt-in `allow_ssh` firewall | ✅ Available |
+| [`compute_instance`](modules/compute_instance/) | Ubuntu 24.04 VMs with a Terraform-generated admin user and random password | ✅ Available |
+
+## Composition example
+
+For end-to-end scenarios where multiple resource types need to be provisioned together (for example, VPC → VM referencing that VPC → bucket in one apply), use [`examples/composition/`](examples/composition/). It wires every module under a single root that accepts one tfvars file whose top-level keys match each module's `variable_name` — the same shape the multi-module mode of [`scripts/scaffold_tfvars.sh`](scripts/scaffold_tfvars.sh) emits.
+
+```bash
+# Generate a combined tfvars with the scaffolder (or write it by hand)
+./scripts/scaffold_tfvars.sh
+
+# Apply the whole stack at once
+terraform -chdir=examples/composition init
+terraform -chdir=examples/composition plan -var-file=$PWD/generated.tfvars.json -out=tfplan
+terraform -chdir=examples/composition apply tfplan
+```
 
 ## Repository structure
 
