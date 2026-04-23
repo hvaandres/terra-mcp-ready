@@ -2,6 +2,7 @@
 *.tfstate
 *.tfstate.*
 *.tfplan
+plan-*
 .terraform/
 .terraform.lock.hcl
 crash.log
@@ -11,6 +12,21 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 *.tfvars.json
+
+# GCP auth / env (may contain project IDs, key paths, etc.)
+beginning_journey/.env
+beginning_journey/.env.*
+.env
+.env.*
+
+# Common secret-bearing files
+*.key
+*.pem
+*-key.json
+service-account*.json
+sa-*.json
+credentials.json
+application_default_credentials.json
 
 # OS
 .DS_Store

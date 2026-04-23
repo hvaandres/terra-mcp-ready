@@ -4,7 +4,7 @@
 #
 # Supports:
 #   - macOS  (Homebrew)
-#   - Linux  (apt or yum, with HashiCorp repo for Terraform)
+#   - Linux  (apt or yum, with HashiCorp + Google Cloud SDK repos)
 #
 # Usage:
 #   ./beginning_journey/install_tools.sh
@@ -37,7 +37,7 @@ run_cmd() {
 OS="$(uname -s)"
 
 bold "═══════════════════════════════════════════════════════════════"
-bold " terra-mcp-ready — Tool Installer"
+bold " terra-mcp-ready — Tool Installer (GCP)"
 bold "═══════════════════════════════════════════════════════════════"
 echo ""
 echo "  Platform: $OS $(uname -m)"
@@ -50,14 +50,12 @@ echo ""
 
 if [ "$OS" = "Darwin" ]; then
 
-  # Ensure Homebrew is present
   if ! command -v brew &>/dev/null; then
     bold "── Installing Homebrew ──────────────────────────────────────"
     run_cmd '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
     echo ""
   fi
 
-  # Tap HashiCorp
   bold "── Configuring HashiCorp tap ────────────────────────────────"
   run_cmd "brew tap hashicorp/tap"
   echo ""
@@ -74,15 +72,15 @@ if [ "$OS" = "Darwin" ]; then
   fi
   echo ""
 
-  # Azure CLI
-  bold "── Azure CLI ───────────────────────────────────────────────"
-  if command -v az &>/dev/null; then
-    CURRENT=$(az version --output json 2>/dev/null | jq -r '."azure-cli"' 2>/dev/null || echo "unknown")
+  # Google Cloud SDK
+  bold "── Google Cloud SDK (gcloud) ───────────────────────────────"
+  if command -v gcloud &>/dev/null; then
+    CURRENT=$(gcloud version --format=json 2>/dev/null | jq -r '."Google Cloud SDK"' 2>/dev/null || echo "unknown")
     echo "  Current: $CURRENT"
-    run_cmd "brew upgrade azure-cli 2>/dev/null || brew install azure-cli"
+    run_cmd "brew upgrade --cask google-cloud-sdk 2>/dev/null || brew install --cask google-cloud-sdk"
   else
     echo "  Not installed — installing..."
-    run_cmd "brew install azure-cli"
+    run_cmd "brew install --cask google-cloud-sdk"
   fi
   echo ""
 
@@ -97,7 +95,7 @@ if [ "$OS" = "Darwin" ]; then
   fi
   echo ""
 
-  # Git (macOS ships git, but Homebrew has a newer version)
+  # Git
   bold "── Git ─────────────────────────────────────────────────────"
   CURRENT=$(git --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
   echo "  Current: $CURRENT"
@@ -110,7 +108,6 @@ if [ "$OS" = "Darwin" ]; then
 
 elif [ "$OS" = "Linux" ]; then
 
-  # Detect package manager
   if command -v apt-get &>/dev/null; then
     PKG="apt"
   elif command -v yum &>/dev/null; then
@@ -120,16 +117,31 @@ elif [ "$OS" = "Linux" ]; then
     exit 1
   fi
 
-  bold "── Adding HashiCorp repository ─────────────────────────────"
+  bold "── Adding HashiCorp + Google Cloud SDK repositories ────────"
   if [ "$PKG" = "apt" ]; then
     run_cmd "sudo apt-get update -qq"
-    run_cmd "sudo apt-get install -y -qq gnupg software-properties-common curl"
+    run_cmd "sudo apt-get install -y -qq gnupg software-properties-common curl apt-transport-https ca-certificates"
+
     run_cmd 'curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg 2>/dev/null'
     run_cmd 'echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list'
+
+    run_cmd 'curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg 2>/dev/null'
+    run_cmd 'echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list'
+
     run_cmd "sudo apt-get update -qq"
   else
     run_cmd "sudo yum install -y yum-utils"
     run_cmd "sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo"
+
+    run_cmd 'sudo tee /etc/yum.repos.d/google-cloud-sdk.repo > /dev/null <<EOF
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+EOF'
   fi
   echo ""
 
@@ -142,9 +154,13 @@ elif [ "$OS" = "Linux" ]; then
   fi
   echo ""
 
-  # Azure CLI
-  bold "── Azure CLI ───────────────────────────────────────────────"
-  run_cmd "curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
+  # gcloud
+  bold "── Google Cloud SDK (gcloud) ───────────────────────────────"
+  if [ "$PKG" = "apt" ]; then
+    run_cmd "sudo apt-get install -y google-cloud-cli"
+  else
+    run_cmd "sudo yum install -y google-cloud-cli"
+  fi
   echo ""
 
   # jq
@@ -168,10 +184,10 @@ elif [ "$OS" = "Linux" ]; then
 else
   red "Unsupported OS: $OS"
   echo "Please install the following manually:"
-  echo "  - Terraform >= 1.14.8  (https://developer.hashicorp.com/terraform/downloads)"
-  echo "  - Azure CLI >= 2.84.0  (https://learn.microsoft.com/cli/azure/install-azure-cli)"
-  echo "  - jq >= 1.6            (https://jqlang.github.io/jq/download/)"
-  echo "  - Git >= 2.30          (https://git-scm.com/downloads)"
+  echo "  - Terraform >= 1.14.8    (https://developer.hashicorp.com/terraform/downloads)"
+  echo "  - Google Cloud CLI       (https://cloud.google.com/sdk/docs/install)"
+  echo "  - jq >= 1.6              (https://jqlang.github.io/jq/download/)"
+  echo "  - Git >= 2.30            (https://git-scm.com/downloads)"
   exit 1
 fi
 
@@ -186,7 +202,7 @@ bold "════════════════════════�
 if ! $DRY_RUN; then
   echo ""
   echo "  Terraform : $(terraform version -json 2>/dev/null | jq -r '.terraform_version' 2>/dev/null || terraform version 2>/dev/null | head -1)"
-  echo "  Azure CLI : $(az version --output json 2>/dev/null | jq -r '."azure-cli"' 2>/dev/null || echo 'not found')"
+  echo "  gcloud    : $(gcloud version --format=json 2>/dev/null | jq -r '."Google Cloud SDK"' 2>/dev/null || echo 'not found')"
   echo "  jq        : $(jq --version 2>/dev/null || echo 'not found')"
   echo "  Git       : $(git --version 2>/dev/null || echo 'not found')"
   echo ""

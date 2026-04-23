@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 ###############################################################################
-# verify_setup.sh — End-to-end environment verification
+# verify_setup.sh — End-to-end environment verification (GCP)
 #
 # Confirms that:
 #   1. All required tools are at minimum versions
-#   2. terraform init succeeds on the example module
+#   2. terraform init succeeds on both example modules
 #   3. terraform validate passes
 #   4. terraform fmt is clean
 #   5. The test suite passes
@@ -26,7 +26,7 @@ pass() { PASS=$((PASS + 1)); green "  ✓ $1"; }
 fail() { FAIL=$((FAIL + 1)); red   "  ✗ $1"; }
 
 bold "═══════════════════════════════════════════════════════════════"
-bold " terra-mcp-ready — Environment Verification"
+bold " terra-mcp-ready — Environment Verification (GCP)"
 bold "═══════════════════════════════════════════════════════════════"
 echo ""
 
@@ -36,7 +36,7 @@ echo ""
 
 bold "── Step 1: Tool Check ──────────────────────────────────────"
 
-for tool in terraform az jq git; do
+for tool in terraform gcloud jq git; do
   if command -v "$tool" &>/dev/null; then
     pass "$tool found"
   else
@@ -46,21 +46,20 @@ done
 echo ""
 
 # ---------------------------------------------------------------------------
-# Step 2: Terraform init on example
+# Step 2: Terraform init on examples
 # ---------------------------------------------------------------------------
 
 bold "── Step 2: terraform init ─────────────────────────────────"
 
-EXAMPLE_DIR="$REPO_ROOT/examples/resource_groups"
-
-# Clean previous state to ensure fresh init
-rm -rf "$EXAMPLE_DIR/.terraform" "$EXAMPLE_DIR/.terraform.lock.hcl"
-
-if terraform -chdir="$EXAMPLE_DIR" init -backend=false > /dev/null 2>&1; then
-  pass "terraform init (examples/resource_groups)"
-else
-  fail "terraform init (examples/resource_groups)"
-fi
+for example_dir in "$REPO_ROOT/examples/projects" "$REPO_ROOT/examples/storage_buckets"; do
+  label="terraform init ($(basename "$(dirname "$example_dir")")/$(basename "$example_dir"))"
+  rm -rf "$example_dir/.terraform" "$example_dir/.terraform.lock.hcl"
+  if terraform -chdir="$example_dir" init -backend=false > /dev/null 2>&1; then
+    pass "$label"
+  else
+    fail "$label"
+  fi
+done
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -69,11 +68,14 @@ echo ""
 
 bold "── Step 3: terraform validate ─────────────────────────────"
 
-if terraform -chdir="$EXAMPLE_DIR" validate > /dev/null 2>&1; then
-  pass "terraform validate (examples/resource_groups)"
-else
-  fail "terraform validate (examples/resource_groups)"
-fi
+for example_dir in "$REPO_ROOT/examples/projects" "$REPO_ROOT/examples/storage_buckets"; do
+  label="terraform validate ($(basename "$(dirname "$example_dir")")/$(basename "$example_dir"))"
+  if terraform -chdir="$example_dir" validate > /dev/null 2>&1; then
+    pass "$label"
+  else
+    fail "$label"
+  fi
+done
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -83,9 +85,12 @@ echo ""
 bold "── Step 4: terraform fmt ──────────────────────────────────"
 
 for dir in \
-  "$REPO_ROOT/modules/resource_group" \
-  "$REPO_ROOT/examples/resource_groups" \
-  "$REPO_ROOT/tests/resource_group"; do
+  "$REPO_ROOT/modules/project" \
+  "$REPO_ROOT/modules/storage_bucket" \
+  "$REPO_ROOT/examples/projects" \
+  "$REPO_ROOT/examples/storage_buckets" \
+  "$REPO_ROOT/tests/project" \
+  "$REPO_ROOT/tests/storage_bucket"; do
   label="fmt $(basename "$(dirname "$dir")")/$(basename "$dir")"
   if terraform fmt -check "$dir" > /dev/null 2>&1; then
     pass "$label"
@@ -125,8 +130,8 @@ if [ "$FAIL" -eq 0 ]; then
   green " All $TOTAL checks passed — your environment is ready!"
   echo ""
   echo " Next steps:"
-  echo "   1. az login"
-  echo "   2. cd examples/resource_groups"
+  echo "   1. gcloud auth application-default login"
+  echo "   2. cd examples/projects      (or examples/storage_buckets)"
   echo "   3. terraform plan"
 else
   red " $FAIL of $TOTAL checks failed."

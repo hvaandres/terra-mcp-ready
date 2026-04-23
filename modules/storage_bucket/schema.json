@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "terra-mcp-ready/modules/storage_bucket",
+  "title": "GCS Storage Bucket Module",
+  "description": "Provisions one or more Google Cloud Storage buckets. The input is a map where each key is the bucket name (globally unique) and each value is a configuration object.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/storage_bucket_config"
+  },
+  "$defs": {
+    "storage_bucket_config": {
+      "type": "object",
+      "description": "Configuration for a single GCS Bucket.",
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Bucket location. Can be a multi-region (e.g. 'US', 'EU'), dual-region (e.g. 'NAM4'), or region (e.g. 'us-central1')."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project ID to create the bucket in. Leave empty to use the provider's default project.",
+          "default": ""
+        },
+        "storage_class": {
+          "type": "string",
+          "description": "Storage class for objects in the bucket.",
+          "enum": ["STANDARD", "NEARLINE", "COLDLINE", "ARCHIVE"],
+          "default": "STANDARD"
+        },
+        "force_destroy": {
+          "type": "boolean",
+          "description": "When true, allows `terraform destroy` to delete the bucket even if it contains objects. Keep false in production.",
+          "default": false
+        },
+        "uniform_bucket_level_access": {
+          "type": "boolean",
+          "description": "When true, disables ACLs and uses IAM exclusively. Recommended.",
+          "default": true
+        },
+        "versioning": {
+          "type": "boolean",
+          "description": "When true, enables object versioning on the bucket.",
+          "default": false
+        },
+        "labels": {
+          "type": "object",
+          "description": "Key-value labels applied to the bucket.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "retention_days": {
+          "type": "number",
+          "description": "When > 0, attaches a retention policy preventing objects from being deleted for this many days. 0 disables.",
+          "default": 0,
+          "minimum": 0
+        },
+        "lifecycle_age_days": {
+          "type": "number",
+          "description": "When > 0, adds a lifecycle rule that deletes objects older than this many days. 0 disables.",
+          "default": 0,
+          "minimum": 0
+        }
+      },
+      "required": ["location"],
+      "additionalProperties": false
+    }
+  },
+  "_meta": {
+    "module_source": "git::https://github.com/<org>/terra-mcp-ready.git//modules/storage_bucket",
+    "variable_name": "storage_buckets",
+    "output_keys": ["buckets", "names", "urls"],
+    "terraform_version": ">= 1.5, < 2.0",
+    "provider": "google ~> 6.0",
+    "reserved_keys": [
+      "location",
+      "project",
+      "storage_class",
+      "force_destroy",
+      "uniform_bucket_level_access",
+      "versioning",
+      "retention_days",
+      "lifecycle_age_days",
+      "labels"
+    ],
+    "key_spec": {
+      "label": "bucket name",
+      "regex": "^[a-z0-9][-a-z0-9_.]{1,61}[a-z0-9]$",
+      "description": "Globally-unique GCS bucket name across ALL of Google Cloud Storage. 3-63 chars. Must start and end with a lowercase letter or digit. May contain lowercase letters, digits, hyphens, underscores, and periods. This is the bucket name only \u2014 location and project are separate prompts below.",
+      "examples": ["my-app-assets-dev", "my-app-backups-prod"]
+    }
+  }
+}

@@ -1,34 +1,45 @@
-# terra-mcp-ready
+# terra-mcp-ready (Google Cloud)
 
-Reusable Terraform modules for Azure with a **JSON-block configuration model** and **MCP/AI-friendly schemas**.
+Reusable Terraform modules for Google Cloud with a **JSON-block configuration model** and **MCP/AI-friendly schemas**.
 
 ## The idea
 
-Traditional Terraform consumption requires managing dozens of individual variables spread across multiple `.tfvars` files. This repo flips that: **one `terraform.tfvars` file, one block per resource**.
+Traditional Terraform consumption requires managing dozens of individual variables spread across multiple `.tfvars` files. This repo flips that: **one `terraform.tfvars` file, one block per resource**. No variables to learn — just the resource objects you need.
 
 ```hcl
 # This is all a consumer writes — no variables to learn, no files to manage
-resource_groups = {
-  rg-networking-dev = {
-    location = "eastus2"
-    tags     = { Environment = "dev", Team = "platform" }
+projects = {
+  platform-dev-1234 = {
+    name            = "Platform (Dev)"
+    folder_id       = "folders/123456789012"
+    billing_account = "0X0X0X-0X0X0X-0X0X0X"
+    labels          = { environment = "dev", team = "platform" }
   }
-  rg-app-prod = {
-    location = "westus2"
-    lock     = true
+  app-prod-1234 = {
+    name            = "Application (Prod)"
+    folder_id       = "folders/123456789012"
+    billing_account = "0X0X0X-0X0X0X-0X0X0X"
+    labels          = { environment = "prod", team = "app" }
+    lock            = true
   }
 }
 ```
 
-Each module accepts a `map(object({...}))` where the **map key is the resource name** and the object contains the configuration. Sensible defaults mean you only specify what you need.
+Each module accepts a `map(object({...}))` where the **map key is the resource's natural identifier** (project_id, bucket name, etc.) and the object contains the configuration. Sensible defaults mean you only specify what you need.
 
 ## How to consume (from another repo)
 
 ```hcl
-module "resource_groups" {
-  source = "git::https://github.com/<org>/terra-mcp-ready.git//modules/resource_group?ref=v1.0.0"
+module "projects" {
+  source = "git::https://github.com/<org>/terra-mcp-ready.git//modules/project?ref=v1.0.0"
 
-  resource_groups = var.resource_groups
+  projects = var.projects
+}
+
+module "storage_buckets" {
+  source = "git::https://github.com/<org>/terra-mcp-ready.git//modules/storage_bucket?ref=v1.0.0"
+
+  storage_buckets = var.storage_buckets
 }
 ```
 
@@ -43,38 +54,47 @@ Every module ships a `schema.json` ([JSON Schema draft-07](https://json-schema.o
 3. **Generate** valid `terraform.tfvars` blocks without parsing HCL
 4. **Validate** user input before `terraform plan`
 
-See [`schemas/README.md`](schemas/README.md) for the full convention.
+**For agent/LLM/MCP consumers, read [`AGENTS.md`](AGENTS.md) first** — it is the single-page, machine-readable contract for discovery, generation, validation, and authoring. See [`schemas/README.md`](schemas/README.md) for the schema convention.
 
 ## Module catalog
 
 | Module | Description | Status |
 |--------|-------------|--------|
-| [`resource_group`](modules/resource_group/) | Azure Resource Groups with optional locks | ✅ Available |
+| [`project`](modules/project/) | GCP Projects with optional deletion liens | ✅ Available |
+| [`storage_bucket`](modules/storage_bucket/) | GCS Buckets with versioning, retention, and lifecycle rules | ✅ Available |
 
 ## Repository structure
 
 ```
 terra-mcp-ready/
 ├── modules/
-│   └── resource_group/        # Each module is self-contained
-│       ├── main.tf
-│       ├── variables.tf       # Single map(object) input
-│       ├── outputs.tf         # Standardized map output
-│       ├── versions.tf
-│       ├── schema.json        # Machine-readable contract
-│       └── README.md
+│   ├── project/                # GCP Project module
+│   │   ├── main.tf
+│   │   ├── variables.tf        # Single map(object) input
+│   │   ├── outputs.tf          # Standardized map output
+│   │   ├── versions.tf
+│   │   ├── schema.json         # Machine-readable contract
+│   │   └── README.md
+│   └── storage_bucket/         # GCS Bucket module (same layout)
 ├── examples/
-│   └── resource_groups/       # Runnable example with sample tfvars
+│   ├── projects/               # Runnable example with sample tfvars
+│   └── storage_buckets/
+├── tests/
+│   ├── project/
+│   └── storage_bucket/
 ├── schemas/
-│   └── README.md              # Schema authoring convention
+│   └── README.md               # Schema authoring convention
+├── scripts/
+│   └── run_tests.sh
+├── beginning_journey/          # Environment setup scripts
 └── README.md
 ```
 
 ## Design principles
 
 - **Map-in / map-out** — Every module takes a map and returns a map keyed by the same keys.
-- **Key = name** — The map key is the Azure resource name. No separate `name` field.
-- **Defaults everywhere** — Only truly required fields (like `location`) are mandatory.
+- **Key = identifier** — The map key is the resource's natural ID (project_id, bucket name). No separate `name` field.
+- **Defaults everywhere** — Only truly required fields (like `location` for buckets) are mandatory.
 - **Schema-first** — `schema.json` is a first-class deliverable, not an afterthought.
 - **Versioned** — Consumers pin to git tags (`?ref=v1.0.0`). Breaking changes bump the major version.
 
@@ -82,7 +102,7 @@ terra-mcp-ready/
 
 - Semantic versioning via git tags: `v1.0.0`, `v1.1.0`, etc.
 - Consumers pin module source refs to a specific tag.
-- `versions.tf` in each module constrains Terraform (`>= 1.5, < 2.0`) and providers (`azurerm ~> 4.0`).
+- `versions.tf` in each module constrains Terraform (`>= 1.5, < 2.0`) and providers (`google ~> 6.0`).
 - Breaking changes to the variable shape require a major version bump.
 
 ## Requirements
@@ -90,18 +110,19 @@ terra-mcp-ready/
 | Tool | Version |
 |------|--------|
 | Terraform | >= 1.5 |
-| Azure CLI | latest |
-| azurerm provider | ~> 4.0 |
+| gcloud CLI | latest |
+| google provider | ~> 6.0 |
 
 ## Quick start
 
 ```bash
 # Clone and try the example
 git clone https://github.com/<org>/terra-mcp-ready.git
-cd terra-mcp-ready/examples/resource_groups
+cd terra-mcp-ready/examples/projects
 
-# Login to Azure
-az login
+# Login to Google Cloud (for Application Default Credentials)
+gcloud auth application-default login
+gcloud config set project "<YOUR_PROJECT_ID>"
 
 # Init and plan
 terraform init

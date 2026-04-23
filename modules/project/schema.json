@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "terra-mcp-ready/modules/project",
+  "title": "GCP Project Module",
+  "description": "Provisions one or more GCP Projects. The input is a map where each key is the project_id and each value is a configuration object.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/project_config"
+  },
+  "$defs": {
+    "project_config": {
+      "type": "object",
+      "description": "Configuration for a single GCP Project.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable display name for the project. Defaults to the project_id if empty.",
+          "default": ""
+        },
+        "folder_id": {
+          "type": "string",
+          "description": "Parent folder in the form 'folders/1234567890'. Mutually exclusive with org_id.",
+          "default": ""
+        },
+        "org_id": {
+          "type": "string",
+          "description": "Parent organization ID (numeric). Mutually exclusive with folder_id.",
+          "default": ""
+        },
+        "billing_account": {
+          "type": "string",
+          "description": "Billing account ID in the form '0X0X0X-0X0X0X-0X0X0X'. Required for any project that will create billable resources.",
+          "default": ""
+        },
+        "labels": {
+          "type": "object",
+          "description": "Key-value labels applied to the project. Keys and values must follow GCP label rules (lowercase, digits, hyphens, underscores).",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "auto_create_network": {
+          "type": "boolean",
+          "description": "When true, GCP creates the default VPC network in the project. Keep false unless you specifically want the default network.",
+          "default": false
+        },
+        "lock": {
+          "type": "boolean",
+          "description": "When true, attaches a google_resource_manager_lien that prevents project deletion.",
+          "default": false
+        },
+        "deletion_policy": {
+          "type": "string",
+          "description": "Controls what happens to the project on `terraform destroy`. DELETE removes it, PREVENT blocks destruction, ABANDON leaves it in place.",
+          "enum": ["DELETE", "PREVENT", "ABANDON"],
+          "default": "DELETE"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "_meta": {
+    "module_source": "git::https://github.com/<org>/terra-mcp-ready.git//modules/project",
+    "variable_name": "projects",
+    "output_keys": ["projects", "ids", "numbers"],
+    "terraform_version": ">= 1.5, < 2.0",
+    "provider": "google ~> 6.0",
+    "reserved_keys": [
+      "name",
+      "folder_id",
+      "org_id",
+      "billing_account",
+      "auto_create_network",
+      "lock",
+      "deletion_policy",
+      "labels"
+    ],
+    "key_spec": {
+      "label": "project_id",
+      "regex": "^[a-z][-a-z0-9]{4,28}[a-z0-9]$",
+      "description": "Globally-unique GCP project_id. 6-30 chars. Must start with a lowercase letter, end with a letter or digit, and contain only lowercase letters, digits, and hyphens.",
+      "examples": ["my-app-dev-123", "gdg-terra-mcp-demo-01"]
+    }
+  }
+}

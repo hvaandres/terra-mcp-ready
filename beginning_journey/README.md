@@ -1,4 +1,4 @@
-# Beginning Journey — Getting Started with terra-mcp-ready
+# Beginning Journey — Getting Started with terra-mcp-ready (GCP)
 
 This folder contains everything you need to set up your environment for working with the Terraform modules in this repository.
 
@@ -7,7 +7,7 @@ This folder contains everything you need to set up your environment for working 
 | Tool | Minimum | Recommended | Purpose |
 |------|---------|-------------|---------|
 | **Terraform** | >= 1.5 | 1.14.8 | Infrastructure as Code engine |
-| **Azure CLI** | >= 2.60 | 2.84.0 | Azure authentication and management |
+| **gcloud CLI** | >= 460.0.0 | latest | Google Cloud authentication and management |
 | **jq** | >= 1.6 | 1.7+ | JSON processing (used by test scripts) |
 | **Git** | >= 2.30 | latest | Version control |
 | **Homebrew** | latest | latest | Package manager (macOS only) |
@@ -44,24 +44,52 @@ Supports **macOS** (via Homebrew) and **Linux** (apt/yum). The script will:
 
 Runs an end-to-end check:
 - All tools present and at the right versions
-- `terraform init` succeeds on the example module
+- `terraform init` succeeds on the example modules
 - `terraform validate` passes
 - `terraform fmt -check` passes
 - Test suite passes (`scripts/run_tests.sh`)
 
-## Azure authentication
-
-After tools are installed, log in to Azure:
+### 4. Capture your GCP env vars
 
 ```bash
-az login
-az account set --subscription "<YOUR_SUBSCRIPTION_ID>"
+./beginning_journey/setup_env.sh            # interactive
+./beginning_journey/setup_env.sh --quiet    # auto-discover from gcloud config
+
+# Then in every shell where you want them exported:
+source beginning_journey/.env
+```
+
+This collects the values Terraform + gcloud need and writes them to `beginning_journey/.env` (gitignored). Source the file at the start of a session and `terraform plan/apply` against the example modules picks up your project, region, and zone without extra flags.
+
+Collected values:
+
+| Var | Purpose |
+|---|---|
+| `GOOGLE_PROJECT` / `GOOGLE_CLOUD_PROJECT` | Default project for the google provider |
+| `GOOGLE_REGION` | Default region (e.g. `us-central1`) |
+| `GOOGLE_ZONE` | Default zone (e.g. `us-central1-a`) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Optional path to a service-account key JSON (leave empty to use ADC) |
+| `GOOGLE_BILLING_ACCOUNT` | Optional; used by `modules/project` |
+
+Default source precedence for each value: **current shell > previously-saved `.env` > `gcloud config` > empty**. If you skip a prompt, the best-available default is used.
+
+Why not auto-export? Scripts can't modify the parent shell's environment. You always have to `source` the file explicitly in each terminal (or add `source /path/to/beginning_journey/.env` to your `~/.zshrc`).
+
+## GCP authentication
+
+After tools are installed, log in to Google Cloud:
+
+```bash
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project "<YOUR_PROJECT_ID>"
 ```
 
 To verify:
 
 ```bash
-az account show --output table
+gcloud auth list
+gcloud config list --format=json
 ```
 
 ## Upgrading Terraform
@@ -97,8 +125,16 @@ tfenv install 1.14.8
 tfenv use 1.14.8
 ```
 
-**Azure CLI login issues**
-Try device-code flow if browser-based login fails:
+**gcloud login issues**
+If the browser-based flow fails, use a no-browser / device-code flow:
 ```bash
-az login --use-device-code
+gcloud auth login --no-browser
 ```
+
+**Application Default Credentials (ADC)**
+The Terraform `google` provider reads ADC — not the user credentials set by `gcloud auth login`. You must run:
+```bash
+gcloud auth application-default login
+```
+to populate `~/.config/gcloud/application_default_credentials.json`, or set
+`GOOGLE_APPLICATION_CREDENTIALS` to the path of a service-account key.

@@ -14,8 +14,8 @@ set -uo pipefail
 
 TF_MIN="1.5.0"
 TF_REC="1.14.8"
-AZ_MIN="2.60.0"
-AZ_REC="2.84.0"
+GCLOUD_MIN="460.0.0"
+GCLOUD_REC="490.0.0"
 JQ_MIN="1.6"
 GIT_MIN="2.30.0"
 
@@ -30,7 +30,6 @@ bold()   { printf "\033[1m%s\033[0m" "$*"; }
 
 ISSUES=0
 
-# Compare two semver-ish strings. Returns 0 if $1 >= $2.
 version_gte() {
   local IFS=.
   local i a=($1) b=($2)
@@ -43,7 +42,6 @@ version_gte() {
   return 0
 }
 
-# Check a tool: name, command to get version, installed version, min, recommended
 check_tool() {
   local name="$1" installed="$2" min="$3" rec="$4"
 
@@ -74,7 +72,7 @@ check_tool() {
 # ---------------------------------------------------------------------------
 
 bold "═══════════════════════════════════════════════════════════════"
-bold " terra-mcp-ready — Prerequisites Check"
+bold " terra-mcp-ready — Prerequisites Check (GCP)"
 bold "═══════════════════════════════════════════════════════════════"
 echo ""
 
@@ -89,10 +87,11 @@ if command -v terraform &>/dev/null; then
            terraform version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 fi
 
-# Azure CLI
-AZ_VER=""
-if command -v az &>/dev/null; then
-  AZ_VER=$(az version --output json 2>/dev/null | jq -r '."azure-cli"' 2>/dev/null || echo "")
+# gcloud
+GCLOUD_VER=""
+if command -v gcloud &>/dev/null; then
+  GCLOUD_VER=$(gcloud version --format=json 2>/dev/null | jq -r '."Google Cloud SDK"' 2>/dev/null || \
+               gcloud version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
 fi
 
 # jq
@@ -126,10 +125,10 @@ fi
 # ---------------------------------------------------------------------------
 
 bold "── Required Tools ───────────────────────────────────────────"
-check_tool "Terraform"  "$TF_VER"  "$TF_MIN" "$TF_REC"
-check_tool "Azure CLI"  "$AZ_VER"  "$AZ_MIN" "$AZ_REC"
-check_tool "jq"         "$JQ_VER"  "$JQ_MIN" "1.7"
-check_tool "Git"        "$GIT_VER" "$GIT_MIN" "2.40"
+check_tool "Terraform"  "$TF_VER"     "$TF_MIN"     "$TF_REC"
+check_tool "gcloud"     "$GCLOUD_VER" "$GCLOUD_MIN" "$GCLOUD_REC"
+check_tool "jq"         "$JQ_VER"     "$JQ_MIN"     "1.7"
+check_tool "Git"        "$GIT_VER"    "$GIT_MIN"    "2.40"
 echo ""
 
 bold "── Optional Tools ───────────────────────────────────────────"
@@ -151,48 +150,61 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# Azure authentication status
+# GCP authentication status
 # ---------------------------------------------------------------------------
 
-bold "── Azure Authentication ─────────────────────────────────────"
+bold "── GCP Authentication ───────────────────────────────────────"
 
-if command -v az &>/dev/null; then
-  AZ_ACCOUNT=$(az account show --output json 2>/dev/null) || AZ_ACCOUNT=""
-  if [ -n "$AZ_ACCOUNT" ]; then
-    AZ_SUB=$(echo "$AZ_ACCOUNT" | jq -r '.name' 2>/dev/null)
-    AZ_ID=$(echo "$AZ_ACCOUNT" | jq -r '.id' 2>/dev/null)
-    printf "  Logged in     %s\n" "$(green "✓")"
-    printf "  Subscription  %s (%s)\n" "$AZ_SUB" "$AZ_ID"
+if command -v gcloud &>/dev/null; then
+  ACTIVE_ACCT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -1)
+  if [ -n "$ACTIVE_ACCT" ]; then
+    printf "  Active account    %s\n" "$(green "✓ $ACTIVE_ACCT")"
   else
-    printf "  Logged in     %s\n" "$(yellow "✗ not authenticated (run: az login)")"
+    printf "  Active account    %s\n" "$(yellow "✗ not authenticated (run: gcloud auth login)")"
+  fi
+
+  PROJECT=$(gcloud config get-value project 2>/dev/null || true)
+  if [ -n "$PROJECT" ] && [ "$PROJECT" != "(unset)" ]; then
+    printf "  Default project   %s\n" "$PROJECT"
+  else
+    printf "  Default project   %s\n" "$(yellow "not set (run: gcloud config set project <id>)")"
+  fi
+
+  ADC_PATH="$HOME/.config/gcloud/application_default_credentials.json"
+  if [ -f "$ADC_PATH" ]; then
+    printf "  ADC file          %s\n" "$(green "✓ $ADC_PATH")"
+  elif [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+    printf "  ADC file          %s\n" "$(green "✓ $GOOGLE_APPLICATION_CREDENTIALS (from env)")"
+  else
+    printf "  ADC file          %s\n" "$(yellow "✗ run: gcloud auth application-default login")"
   fi
 else
-  printf "  Logged in     %s\n" "$(red "✗ Azure CLI not installed")"
+  printf "  Active account    %s\n" "$(red "✗ gcloud not installed")"
 fi
 
 echo ""
 
 # ---------------------------------------------------------------------------
-# ARM_ environment variables (for CI / plan-based tests)
+# GOOGLE_* environment variables (for CI / plan-based tests)
 # ---------------------------------------------------------------------------
 
 bold "── CI Environment Variables ─────────────────────────────────"
 
-arm_vars=(ARM_SUBSCRIPTION_ID ARM_CLIENT_ID ARM_CLIENT_SECRET ARM_TENANT_ID)
-arm_set=0
-for var in "${arm_vars[@]}"; do
+gcp_vars=(GOOGLE_APPLICATION_CREDENTIALS GOOGLE_PROJECT GOOGLE_CLOUD_PROJECT GOOGLE_REGION)
+gcp_set=0
+for var in "${gcp_vars[@]}"; do
   if [ -n "${!var:-}" ]; then
-    printf "  %-25s %s\n" "$var" "$(green "set")"
-    arm_set=$((arm_set + 1))
+    printf "  %-30s %s\n" "$var" "$(green "set")"
+    gcp_set=$((gcp_set + 1))
   else
-    printf "  %-25s %s\n" "$var" "$(yellow "not set")"
+    printf "  %-30s %s\n" "$var" "$(yellow "not set")"
   fi
 done
 
-if [ "$arm_set" -eq 0 ]; then
+if [ "$gcp_set" -eq 0 ]; then
   echo ""
   yellow "  These are optional — only needed for plan-based tests and CI."
-  yellow "  Interactive 'az login' is sufficient for local development."
+  yellow "  Interactive 'gcloud auth application-default login' is sufficient for local development."
 fi
 
 echo ""
